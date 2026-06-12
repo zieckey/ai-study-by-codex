@@ -54,8 +54,9 @@ func (a *Agent) Run(ctx context.Context, question string) (answer string, transc
 		{
 			Role: RoleSystem,
 			Content: strings.TrimSpace(`You are a small educational AI Agent.
-You can either return a final answer or call exactly one tool.
-When calling a tool, return JSON with fields: thought, tool, args.
+You can either return a final answer or call one or more tools.
+When calling one tool, return JSON with fields: thought, tool, args.
+When calling multiple tools in the same step, return JSON with fields: thought, calls, where calls is an array of {tool,args}.
 When done, return JSON with fields: thought, final.`),
 		},
 		{Role: RoleUser, Content: question},
@@ -74,23 +75,31 @@ When done, return JSON with fields: thought, final.`),
 			return action.Final, messages, nil
 		}
 
-		toolName := strings.TrimSpace(action.Tool)
-		if toolName == "" {
-			return "", messages, fmt.Errorf("model step %d returned neither final nor tool", step)
+		calls := action.ToolCalls()
+		if len(calls) == 0 {
+			return "", messages, fmt.Errorf("model step %d returned neither final nor tool calls", step)
 		}
 
-		tool, ok := a.tools[toolName]
-		if !ok {
-			observation := fmt.Sprintf("ERROR: unknown tool %q", toolName)
-			messages = append(messages, Message{Role: RoleTool, Content: observation})
-			continue
-		}
+		for _, call := range calls {
+			toolName := strings.TrimSpace(call.Tool)
+			if toolName == "" {
+				messages = append(messages, Message{Role: RoleTool, Content: "ERROR: empty tool name"})
+				continue
+			}
 
-		observation, err := tool.Execute(action.Args)
-		if err != nil {
-			observation = "ERROR: " + err.Error()
+			tool, ok := a.tools[toolName]
+			if !ok {
+				observation := fmt.Sprintf("ERROR: unknown tool %q", toolName)
+				messages = append(messages, Message{Role: RoleTool, Content: fmt.Sprintf("%s => %s", toolName, observation)})
+				continue
+			}
+
+			observation, err := tool.Execute(call.Args)
+			if err != nil {
+				observation = "ERROR: " + err.Error()
+			}
+			messages = append(messages, Message{Role: RoleTool, Content: fmt.Sprintf("%s => %s", toolName, observation)})
 		}
-		messages = append(messages, Message{Role: RoleTool, Content: fmt.Sprintf("%s => %s", toolName, observation)})
 	}
 
 	return "", messages, fmt.Errorf("agent reached max steps %d without final answer", a.maxSteps)

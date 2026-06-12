@@ -104,8 +104,29 @@ type Action struct {
 
 模型每一轮必须做两类决策之一：
 
-1. 调工具：填写 `Tool` 和 `Args`；
+1. 调工具：简单场景填写 `Tool` 和 `Args`；多个独立工具可以填写 `Calls`；
 2. 结束：填写 `Final`。
+
+`Calls` 的形状是：
+
+```go
+type ToolCall struct {
+    Tool string
+    Args json.RawMessage
+}
+```
+
+例如同一轮同时查询天气和时间：
+
+```json
+{
+  "thought": "Need weather and time.",
+  "calls": [
+    {"tool":"weather","args":{"city":"上海"}},
+    {"tool":"time_now","args":{"timezone":"Asia/Shanghai"}}
+  ]
+}
+```
 
 ## 4. 控制循环详解
 
@@ -122,9 +143,11 @@ for step := 1; step <= maxSteps; step++ {
         return action.Final
     }
 
-    tool := tools[action.Tool]
-    observation := tool.Execute(action.Args)
-    messages = append(messages, toolObservation)
+    for _, call := range action.ToolCalls() {
+        tool := tools[call.Tool]
+        observation := tool.Execute(call.Args)
+        messages = append(messages, toolObservation)
+    }
 }
 
 return error("too many steps")
@@ -392,3 +415,54 @@ func NewMyTool() agent.Tool {
 - 返回给模型的 observation 不要太长；
 - 涉及网络、文件、数据库、shell 的工具必须做权限限制；
 - 有状态工具要考虑并发安全和持久化策略。
+
+
+## 11. 多工具调用
+
+早期版本的教学 Agent 每一轮只能调用一个工具：
+
+```json
+{"tool":"weather","args":{"city":"上海"}}
+```
+
+现在已经支持一轮调用多个工具：
+
+```json
+{
+  "thought": "用户同时需要天气和当前时间。",
+  "calls": [
+    {"tool":"weather","args":{"city":"上海"}},
+    {"tool":"time_now","args":{"timezone":"Asia/Shanghai"}}
+  ]
+}
+```
+
+Agent 会按顺序执行 `calls` 数组里的工具，并把每个结果都追加到 transcript：
+
+```text
+assistant: calls=[weather,time_now]
+tool: weather => ...
+tool: time_now => ...
+assistant: final answer
+```
+
+为什么保留 `Tool/Args`？因为单工具调用是最容易理解的教学路径，而且很多真实模型 API 也会兼容“一个 tool call”和“多个 tool calls”两种情况。本项目用 `Action.ToolCalls()` 统一它们：
+
+```go
+func (a Action) ToolCalls() []ToolCall {
+    if len(a.Calls) > 0 {
+        return a.Calls
+    }
+    if a.Tool != "" {
+        return []ToolCall{{Tool: a.Tool, Args: a.Args}}
+    }
+    return nil
+}
+```
+
+试运行：
+
+```bash
+go run ./cmd/agent --trace "同时告诉我上海天气和现在几点？"
+go run cmd/agent/main.go --trace "time，北京天气"
+```

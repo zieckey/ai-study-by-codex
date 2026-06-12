@@ -32,6 +32,13 @@ func (m *RuleBased) Complete(ctx context.Context, messages []agent.Message, tool
 	question := latestUserQuestion(messages)
 	lower := strings.ToLower(question)
 
+	if calls := planMultipleToolCalls(question, lower, tools); len(calls) > 1 {
+		return agent.Action{
+			Thought: "The user asks for multiple independent things, so I can call multiple tools in one model step.",
+			Calls:   calls,
+		}, nil
+	}
+
 	if expr := findArithmetic(question); expr != "" && hasTool(tools, "calculator") {
 		args, _ := json.Marshal(map[string]string{"expression": expr})
 		return agent.Action{
@@ -95,6 +102,14 @@ func (m *RuleBased) Complete(ctx context.Context, messages []agent.Message, tool
 }
 
 func (m *RuleBased) answerFromObservation(messages []agent.Message) (agent.Action, error) {
+	observations := trailingToolObservations(messages)
+	if len(observations) > 1 {
+		return agent.Action{
+			Thought: "Multiple tools returned observations. Now I can combine them into one answer.",
+			Final:   summarizeObservations(observations),
+		}, nil
+	}
+
 	observation := messages[len(messages)-1].Content
 	question := latestUserQuestion(messages)
 
@@ -272,4 +287,60 @@ func extractTodoText(question string) string {
 func findHTTPSURL(text string) string {
 	re := regexp.MustCompile(`https://[^\s，。]+`)
 	return re.FindString(text)
+}
+
+func planMultipleToolCalls(question, lower string, tools []agent.Tool) []agent.ToolCall {
+	var calls []agent.ToolCall
+	seen := map[string]bool{}
+
+	add := func(name string, args any) {
+		if seen[name] || !hasTool(tools, name) {
+			return
+		}
+		payload, _ := json.Marshal(args)
+		calls = append(calls, agent.ToolCall{Tool: name, Args: payload})
+		seen[name] = true
+	}
+
+	if expr := findArithmetic(question); expr != "" {
+		add("calculator", map[string]string{"expression": expr})
+	}
+	if wantsTime(lower) {
+		add("time_now", map[string]string{"timezone": guessTimezone(question)})
+	}
+	if wantsWeather(lower) {
+		add("weather", map[string]string{"city": guessCity(question)})
+	}
+	if action, ok := todoAction(question, lower); ok {
+		add("todo_list", action.args)
+	}
+	if target := findHTTPSURL(question); target != "" {
+		add("http_get", map[string]string{"url": target})
+	}
+
+	return calls
+}
+
+func trailingToolObservations(messages []agent.Message) []string {
+	var reversed []string
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != agent.RoleTool {
+			break
+		}
+		reversed = append(reversed, messages[i].Content)
+	}
+
+	observations := make([]string, len(reversed))
+	for i := range reversed {
+		observations[len(reversed)-1-i] = reversed[i]
+	}
+	return observations
+}
+
+func summarizeObservations(observations []string) string {
+	lines := []string{"多工具调用结果："}
+	for _, observation := range observations {
+		lines = append(lines, "- "+strings.TrimSpace(observation))
+	}
+	return strings.Join(lines, "\n")
 }

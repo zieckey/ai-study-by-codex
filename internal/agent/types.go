@@ -28,11 +28,37 @@ type Tool struct {
 	Execute     func(args json.RawMessage) (string, error)
 }
 
+// ToolCall is one tool invocation requested by the model.
+type ToolCall struct {
+	Tool string          `json:"tool"`
+	Args json.RawMessage `json:"args"`
+}
+
 // Action is the structured decision emitted by the model.
-// It is intentionally simple so that the agent loop is easy to study.
+// It supports both the legacy single-tool fields (Tool/Args) and the newer
+// multi-tool Calls field so the tutorial can demonstrate both patterns.
 type Action struct {
-	Thought string          `json:"thought"`
-	Tool    string          `json:"tool"`
-	Args    json.RawMessage `json:"args"`
-	Final   string          `json:"final"`
+	Thought string `json:"thought"`
+
+	// Legacy single-tool call. Kept for backward compatibility and for simple
+	// examples where one action only needs one tool.
+	Tool string          `json:"tool,omitempty"`
+	Args json.RawMessage `json:"args,omitempty"`
+
+	// Calls lets one model step request multiple tool invocations. The Agent
+	// executes them in order and appends one tool observation per call.
+	Calls []ToolCall `json:"calls,omitempty"`
+
+	Final string `json:"final,omitempty"`
+}
+
+// ToolCalls normalizes Action into a list of tool calls.
+func (a Action) ToolCalls() []ToolCall {
+	if len(a.Calls) > 0 {
+		return a.Calls
+	}
+	if a.Tool != "" {
+		return []ToolCall{{Tool: a.Tool, Args: a.Args}}
+	}
+	return nil
 }

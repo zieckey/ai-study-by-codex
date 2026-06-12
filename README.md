@@ -41,6 +41,13 @@ go run ./cmd/agent --trace "上海天气怎么样？"
 go run ./cmd/agent --trace "现在几点？"
 ```
 
+试试一轮多工具调用：
+
+```bash
+go run ./cmd/agent --trace "同时告诉我上海天气和现在几点？"
+go run cmd/agent/main.go --trace "time，北京天气"
+```
+
 试试待办事项工具：
 
 ```bash
