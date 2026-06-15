@@ -46,6 +46,8 @@ go run ./cmd/agent --trace "现在几点？"
 ```bash
 go run ./cmd/agent --trace "同时告诉我上海天气和现在几点？"
 go run cmd/agent/main.go --trace "time，北京天气"
+go run cmd/agent/main.go --trace "time，北京天气，计算5*7，计算9/3"
+go run cmd/agent/main.go --trace "time，北京天气，计算5*7，计算9/3，上海天气"
 ```
 
 试试待办事项工具：
@@ -129,3 +131,15 @@ go test -ldflags=-linkmode=external ./...
 ```
 
 但对这个教学项目来说，`netgo,osusergo` 更合适，因为它直接避免引入 cgo。
+
+
+多工具调用现在支持同一种工具重复执行，例如：
+
+```bash
+go run cmd/agent/main.go --trace "计算5*7，计算9/3"
+go run cmd/agent/main.go --trace "北京天气，上海天气"
+go run cmd/agent/main.go --trace "time，UTC time"
+go run cmd/agent/main.go --trace "添加待办：A，添加待办：B"
+go run cmd/agent/main.go --trace "GET https://example.com，GET https://httpbin.org/get"
+go run cmd/agent/main.go --trace "agent tool rag"
+```

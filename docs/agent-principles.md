@@ -465,4 +465,18 @@ func (a Action) ToolCalls() []ToolCall {
 ```bash
 go run ./cmd/agent --trace "同时告诉我上海天气和现在几点？"
 go run cmd/agent/main.go --trace "time，北京天气"
+go run cmd/agent/main.go --trace "time，北京天气，计算5*7，计算9/3"
+go run cmd/agent/main.go --trace "time，北京天气，计算5*7，计算9/3，上海天气"
+```
+
+
+多工具调用现在支持同一种工具重复执行，例如：
+
+```bash
+go run cmd/agent/main.go --trace "计算5*7，计算9/3"
+go run cmd/agent/main.go --trace "北京天气，上海天气"
+go run cmd/agent/main.go --trace "time，UTC time"
+go run cmd/agent/main.go --trace "添加待办：A，添加待办：B"
+go run cmd/agent/main.go --trace "GET https://example.com，GET https://httpbin.org/get"
+go run cmd/agent/main.go --trace "agent tool rag"
 ```
